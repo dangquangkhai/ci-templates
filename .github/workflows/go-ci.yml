@@ -1,0 +1,59 @@
+name: go-ci
+on:
+  workflow_call:
+    inputs:
+      go-version-file:
+        type: string
+        default: go.mod
+      golangci-version:
+        type: string
+        default: v2.15.0
+      run-race:
+        type: boolean
+        default: true
+    secrets:
+      CODECOV_TOKEN:
+        required: false
+    outputs:
+      version:
+        description: "git describe of the built commit"
+        value: ${{ jobs.build.outputs.version }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: "${{ inputs.go-version-file }}", cache: true }
+      - run: go vet ./...
+      - run: go test ${{ inputs.run-race && '-race' || '' }} ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: "${{ inputs.go-version-file }}" }
+      - uses: golangci/golangci-lint-action@v9
+        with: { version: "${{ inputs.golangci-version }}" }
+
+  build:
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v7
+        with: { go-version-file: "${{ inputs.go-version-file }}", cache: true }
+      - id: v
+        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+      - run: make build
